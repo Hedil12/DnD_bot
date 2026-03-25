@@ -1,0 +1,4 @@
+smolagents[openai]
+python-telegram-bot
+transformers
+python-dotenv
