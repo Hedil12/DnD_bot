@@ -4,7 +4,8 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from vertexai.preview import reasoning_engines
 from tools import manage_character_sheet, roll_dice, archive_lore, load_session_state, save_session_state
-from database import get_engine, Base, SessionLocal, Party, Character
+from database import get_engine, Base, SessionLocal, Party, Character, GameSave
+from memory import get_summary, update_summary
 
 # Configure logging to show in the terminal
 logging.basicConfig(
@@ -77,42 +78,79 @@ async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.close()
     await update.message.reply_text(f"⚔️ {user_name} is ready for adventure!")
 
+async def delete_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Wipes progress for the current chat only. Irreversible."""
+    user_id = str(update.effective_user.id)
+    chat_id = str(update.effective_chat.id)
+    
+    logger.info(f"🗑️ ACTION: DELETE_REQUEST | User: {user_id} | Chat: {chat_id}")
+    
+    db = SessionLocal()
+    try:
+        # 1. Remove character from THIS chat
+        char = db.query(Character).filter_by(user_id=user_id, chat_id=chat_id).first()
+        if char:
+            db.delete(char)
+            
+        # 2. Remove the World Progress (Summary) for THIS chat
+        save = db.query(GameSave).filter_by(chat_id=chat_id).first()
+        if save:
+            db.delete(save)
+            
+        db.commit()
+        await update.message.reply_text("💥 **The timeline has been erased.** Your character and progress in this chat are gone.")
+        logger.info(f"✅ ACTION: DELETE_COMPLETE | Chat: {chat_id}")
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ ACTION: DELETE_FAILED | Error: {e}")
+        await update.message.reply_text("⚠️ Failed to delete save. The gods of fate are stubborn.")
+    finally:
+        db.close()
+
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Main game loop - with terminal progress tracking."""
+    """Main game loop - Handles Solo vs Group & Memory Summarization."""
     user_id = str(update.effective_user.id)
     chat_id = str(update.effective_chat.id)
     user_text = update.message.text
 
-    # 1. Track incoming message in terminal
-    logger.info(f"📬 [Chat: {chat_id}] Message from Player {user_id}: {user_text}")
-    
+    # ✅ SAFE LOGGING: Track action, not private text
+    logger.info(f"📥 ACTION: MESSAGE_RCVD | User: {user_id} | Chat: {chat_id} | Len: {len(user_text)}")
+
     db = SessionLocal()
     try:
-        party = db.query(Party).filter_by(chat_id=chat_id).first()
+        # 1. 🛡️ PARALLEL UNIVERSE CHECK: Get character for THIS specific chat
+        character = db.query(Character).filter_by(user_id=user_id, chat_id=chat_id).first()
         
-        # Check if the player is part of the game
-        if party and user_id in party.players:
-            print(f"🎲 DM is processing turn for Player {user_id}...") 
-            
-            # Load context
-            history = load_session_state(chat_id)
-            
-            # 2. Track AI Start
-            logger.info(f"🤖 Sending to Gemini for Chat {chat_id}...")
-            
-            # Pass context to Gemini
-            response = dm_agent.run(f"Context: {history}\nPlayer ({user_id}): {user_text}")
-            
-            # 3. Track AI Success
-            logger.info(f"✅ Gemini responded successfully.")
-            await update.message.reply_text(response.content)
-        else:
-            logger.warning(f"⚠️ Unauthorized message from {user_id} in chat {chat_id}")
+        if not character:
+            await update.message.reply_text("❌ You don't have a character in this adventure! Type /join to start.")
+            return
 
+        # 2. 🧠 MEMORY RETRIEVAL: Get the 'Story So Far' for this chat
+        campaign_summary = get_summary(chat_id)
+        
+        # 3. 🤖 AI INVOCATION: Wrap input to prevent 'Prompt Injection'
+        print(f"🎲 DM is thinking for {character.name}...")
+        
+        full_prompt = f"""
+        Current Campaign Summary: {campaign_summary}
+        Player Character: {character.name} (Stats: {character.stats})
+        Player Action: '''{user_text}'''
+        """
+        
+        response = dm_agent.run(full_prompt)
+
+        # 4. 📤 RESPONSE & LOGGING
+        await update.message.reply_text(response.content)
+        logger.info(f"✅ ACTION: AI_RESPONSE_SENT | User: {user_id}")
+
+        # 5. ✍️ AUTOMATIC SUMMARY (Efficiency): Update memory every few turns
+        # For now, let's just append the latest interaction to the summary logic
+        # You can trigger a real 'Summary' call here every 10 messages
+        
     except Exception as e:
-        # 4. Critical Error Logging
-        logger.error(f"💥 CRITICAL ERROR in handle_messages: {e}", exc_info=True)
-        await update.message.reply_text("⚠️ The weave of magic is flickering. (Internal Server Error)")
+        logger.error(f"💥 ACTION: GAME_LOOP_FAILURE | Error: {type(e).__name__}")
+        await update.message.reply_text("⚠️ The Dungeon Master is momentarily dazed. Please try again.")
     
     finally:
         db.close()
@@ -122,5 +160,6 @@ if __name__ == "__main__":
     app = ApplicationBuilder().token(os.getenv("teleAPI")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("join", join))
+    app.add_handler(CommandHandler("delete_save", delete_save))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_messages))
     app.run_polling()
