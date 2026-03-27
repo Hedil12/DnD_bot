@@ -1,15 +1,36 @@
-import os
+import os, vertexai, logging
+from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from vertexai.preview import reasoning_engines
 from tools import manage_character_sheet, roll_dice, archive_lore, load_session_state, save_session_state
-from database import SessionLocal, Party, Character
-import vertexai
+from database import get_engine, Base, SessionLocal, Party, Character
+
+# Configure logging to show in the terminal
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("dnd_bot.log"), # Saves to a file in your folder
+        logging.StreamHandler()            # Also prints to the terminal
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+# Get the connection engine
+engine = get_engine()
+
+# THIS IS THE COMMAND: 
+# It checks if "characters", "parties", etc. exist. If not, it creates them.
+Base.metadata.create_all(bind=engine)
+print("✅ Database tables synced successfully!")
 
 # Initialize Vertex AI with credentials from .env
+load_dotenv()  # Load environment variables from .env file
 vertexai.init(
-    project=os.getenv("GCP_PROJECT_ID"), # e.g., "my-dnd-project-123"
-    location=os.getenv("GCP_REGION")      # e.g., "us-central1"
+    project=os.getenv("GCP_PROJECT_ID"),
+    location=os.getenv("GCP_REGION")
 )
 # Initialize the Vertex AI Agent
 prompt = """You are a professional Dungeon Master. 
@@ -57,23 +78,48 @@ async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"⚔️ {user_name} is ready for adventure!")
 
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Main game loop - only responds to joined players."""
+    """Main game loop - with terminal progress tracking."""
     user_id = str(update.effective_user.id)
     chat_id = str(update.effective_chat.id)
+    user_text = update.message.text
+
+    # 1. Track incoming message in terminal
+    logger.info(f"📬 [Chat: {chat_id}] Message from Player {user_id}: {user_text}")
     
     db = SessionLocal()
-    party = db.query(Party).filter_by(chat_id=chat_id).first()
+    try:
+        party = db.query(Party).filter_by(chat_id=chat_id).first()
+        
+        # Check if the player is part of the game
+        if party and user_id in party.players:
+            print(f"🎲 DM is processing turn for Player {user_id}...") 
+            
+            # Load context
+            history = load_session_state(chat_id)
+            
+            # 2. Track AI Start
+            logger.info(f"🤖 Sending to Gemini for Chat {chat_id}...")
+            
+            # Pass context to Gemini
+            response = dm_agent.run(f"Context: {history}\nPlayer ({user_id}): {user_text}")
+            
+            # 3. Track AI Success
+            logger.info(f"✅ Gemini responded successfully.")
+            await update.message.reply_text(response.content)
+        else:
+            logger.warning(f"⚠️ Unauthorized message from {user_id} in chat {chat_id}")
+
+    except Exception as e:
+        # 4. Critical Error Logging
+        logger.error(f"💥 CRITICAL ERROR in handle_messages: {e}", exc_info=True)
+        await update.message.reply_text("⚠️ The weave of magic is flickering. (Internal Server Error)")
     
-    # Check if the player is part of the game
-    if party and user_id in party.players:
-        # Pass context to Gemini
-        history = load_session_state(chat_id)
-        response = dm_agent.run(f"Context: {history}\nPlayer ({user_id}): {update.message.text}")
-        await update.message.reply_text(response.content)
-    db.close()
+    finally:
+        db.close()
+        logger.info(f"🔌 Database connection closed for {chat_id}")
 
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(os.getenv("TELEGRAM_TOKEN")).build()
+    app = ApplicationBuilder().token(os.getenv("teleAPI")).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("join", join))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_messages))

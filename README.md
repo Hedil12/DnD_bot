@@ -1,54 +1,58 @@
-# ⚔️ Agentic D&D Telegram Bot: AI Dungeon Master
+# ⚔️ Agentic D&D Bot: Vertex AI & Google Cloud Integration
 
-A specialized Telegram bot that transforms a Large Language Model (LLM) into an interactive **Dungeon Master**. This project moves beyond simple chat by implementing **Agentic AI**—allowing the model to use specific tools to manage game mechanics, character stats, and campaign progression.
-
----
-
-## 🤖 The "Agentic" Approach
-Unlike a standard chatbot, this bot uses an **Agentic Workflow**. The AI (Gemini / Local LLM) has access to a "Toolbox" of Python functions it can call to interact with the game world.
-
-### 🛠️ Core Agent Tools
-* **🎲 Dice Roller:** An automated tool that interprets story context to roll specific dice (e.g., $d20$ for skill checks, $2d8$ for damage).
-* **📜 Campaign Manager:** A "Memory" tool that generates and updates story summaries. This allows the AI to stay consistent without needing the entire chat history.
-* **👤 Character CRUD:** A dedicated system for managing player sheets (Create, Read, Update, Delete). 
-    * *Current State:* Local logging and file-based persistence.
-    * *Future State:* Migration to a centralized SQL database.
+A professional-grade **AI Dungeon Master** built on Google Cloud Platform (GCP). This bot utilizes **Vertex AI (Gemini)** for agentic reasoning and **Cloud SQL (PostgreSQL)** for persistent game state management, providing a seamless TTRPG experience directly within Telegram.
 
 ---
 
-## 🎮 Game Flow & Commands
-The bot uses a structured command system to guide the player through the TTRPG (Tabletop Role-Playing Game) experience:
+## ☁️ Cloud Architecture & Tech Stack
 
-| Command | Purpose |
-| :--- | :--- |
-| `/start` | Initializes the bot and provides the main menu. |
-| `/join_game` | Registers the user and begins the character creation flow. |
-| `/ready_up` | Signals the AI that the party is assembled and ready. |
-| `/get_summary` | Fetches the current AI-generated "State of the World." |
-| `/start_quest` | Prompts the AI Agent to generate the opening narrative encounter. |
+*   **AI Engine:** `Vertex AI` (Gemini 2.0 Flash lite) — Leverages advanced function calling for agentic tool use.
+*   **Database:** `Google Cloud SQL` (PostgreSQL) — Centralized storage for characters, campaign states, and chat logs.
+*   **Orchestration:** `Vertex AI SDK` .
+*   **Interface:** `python-telegram-bot` (Asynchronous).
+*   **Infrastructure:** Designed for deployment on `Google Cloud Run` or `Compute Engine`.
 
 ---
 
-## ⚡ Optimization & Resource Efficiency
-A major focus of this project was **Token Management** and **Cost Reduction**. To ensure the bot remains responsive and inexpensive (especially when using high-parameter APIs), I implemented the following:
+## 🤖 Agentic Tooling & Logic
 
-* **Context Pruning:** Instead of sending massive chat logs, the bot only sees the **latest summary + the current player input**. This keeps the context window small and prevents "Context Drift."
-* **Small Model Compatibility:** Designed to be lightweight enough to run on **0.5B - 3B parameter models** by offloading math and data tracking to local Python logic.
-* **Stateless Execution:** By using a local CRUD system for characters, the AI doesn't have to "remember" HP or Gold—it simply "reads" the tool output.
+The bot operates as an **Autonomous Agent**. When a player acts, the Gemini model determines if it needs to call a specific Python tool:
 
----
-
-## 🛠️ Technical Stack
-* **Language:** Python 3.10+
-* **AI Integration:** Gemini API (LLM Model), HuggingFace smolagent API (Agentic tool) 
-* **Interface:** `python-telegram-bot`
-* **Data Handling:** Local JSON/Log-based storage (Transitioning to PostgreSQL or MySQL)
+*   **🎲 Dice Engine:** Calculates rolls ($d20, d12, etc.$) based on situational difficulty.
+*   **📖 Context Manager:** Periodically summarizes long-form adventures to stay within token limits.
+*   **💾 Postgres CRUD:** A robust backend to Create, Read, Update, and Delete character data and campaign progress.
 
 ---
 
-## 📈 Roadmap & Learning Journey
-This project was born from a desire to see how AI can handle **structured game rules** vs **creative storytelling**. 
+## 🎮 Game Flow & Session Handling
 
-- [ ] **Database Integration:** Moving from local logs to a persistent database.
-- [ ] **Multi-turn Combat Logic:** Developing a tool specifically for initiative and turn-tracking.
-- [ ] **Inventory System:** Implementing a complex tool for item management and weight calculations.
+The bot intelligently distinguishes between **Private** (1-on-1) and **Public** (Group) chats to manage game sessions effectively.
+
+### **Core Commands**
+*   **`/start`**: Initializes the connection. The bot detects the `ChatType` (Private vs. Group) and sets up the environment accordingly.
+*   **`/join`**: Registers the user into the active database session. If in a group chat, it links the user to that specific Group ID.
+
+### **Message Handling & Persistence**
+Every interaction is processed through a multi-layered pipeline:
+1.  **Ingestion:** Incoming messages are captured and identified by User ID and Chat ID.
+2.  **Logging:** System-level logs track API latency, tool-calling success, and errors for debugging.
+3.  **Database Sync:** Game events (e.g., "Found a rusty sword") are saved to PostgreSQL immediately to ensure no data loss if the bot restarts.
+4.  **AI Response:** Gemini generates the narrative based on the retrieved DB context.
+
+---
+
+## ⚡ Performance & Optimization
+
+*   **Token Efficiency:** Implemented a "Sliding Window" context approach. By storing previous interactions in PostgreSQL, we only feed the most relevant "summaries" back to Vertex AI, significantly reducing costs.
+*   **Connection Pooling:** Optimized database hits using SQLAlchemy to handle multiple concurrent users without exhausting Cloud SQL resources.
+*   **Structured Logging:** Comprehensive logs are maintained to monitor the "Chain of Thought" of the AI agent, ensuring the DM logic remains consistent.
+
+---
+
+## ⚙️ Configuration (GCP)
+
+To run this project, ensure the following environment variables are set:
+*   `GOOGLE_APPLICATION_CREDENTIALS`: Path to your GCP Service Account JSON.
+*   `PROJECT_ID`: Your Google Cloud Project ID.
+*   `DB_HOST`: Your Cloud SQL Public/Private IP.
+*   `TELEGRAM_TOKEN`: Your bot token from BotFather.

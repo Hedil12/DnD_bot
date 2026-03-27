@@ -1,2 +1,4 @@
 .env
-gen-lang-client-0909849634-b660d1a70e3a
+*.json
+.venv/
+*.log
