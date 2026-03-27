@@ -11,3 +11,8 @@ cloud-sql-python-connector[pg8000]>=1.6.0
 SQLAlchemy>=2.0.0
 pgvector>=0.2.4
 python-dotenv>=1.0.0
+
+# Langchain and related dependencies
+langchain
+langchain-core
+langchain-google-vertexai

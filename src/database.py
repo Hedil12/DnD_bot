@@ -2,20 +2,19 @@ import os
 from dotenv import load_dotenv
 from google.cloud.sql.connector import Connector, IPTypes
 import sqlalchemy
+from sqlalchemy import Column, String, Integer, JSON, Text, DateTime, Boolean, func
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # 1. LOAD DOTENV FIRST
 load_dotenv()
 
-# 2. FORCE SET THE ENV VAR IN PYTHON (Safety Hack)
-# This ensures Google's internal library sees the file even if .env is acting up
+# 2. FORCE SET THE ENV VAR IN PYTHON
 if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 else:
     print("❌ ERROR: GOOGLE_APPLICATION_CREDENTIALS not found in .env")
 
 def get_engine():
-    # The Connector() looks at os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
     connector = Connector() 
     
     def getconn():
@@ -36,31 +35,35 @@ def get_engine():
     return engine
 
 Base = declarative_base()
-# This triggers the engine creation
 engine = get_engine() 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # --- Models ---
+
 class Character(Base):
     __tablename__ = "characters"
-    user_id = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
-    name = sqlalchemy.Column(sqlalchemy.String)
-    stats = sqlalchemy.Column(sqlalchemy.JSON) # {"hp": 20, "gold": 10}
+    # Added id as primary key so one user can have multiple characters in different chats
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String)
+    chat_id = Column(String)  # ✅ FIXED: Added missing chat_id
+    name = Column(String)
+    stats = Column(JSON)      # {"hp": 20, "gold": 10}
 
 class CampaignLore(Base):
     __tablename__ = "campaign_lore"
-    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
-    content = sqlalchemy.Column(sqlalchemy.Text)
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(String) # Good to track which chat this lore belongs to
+    content = Column(Text)
 
 class Party(Base):
     __tablename__ = "parties"
-    chat_id = sqlalchemy.Column(sqlalchemy.String, primary_key=True) # Group Chat ID
-    leader_id = sqlalchemy.Column(sqlalchemy.String)
-    is_active = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
-    players = sqlalchemy.Column(sqlalchemy.JSON) # List of user_ids: ["123", "456"]
+    chat_id = Column(String, primary_key=True)
+    leader_id = Column(String)
+    is_active = Column(Boolean, default=False)
+    players = Column(JSON)    # ["123", "456"]
 
 class GameSave(Base):
     __tablename__ = "game_saves"
-    chat_id = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
-    summary = sqlalchemy.Column(sqlalchemy.Text, default="The journey begins...")
-    last_saved = sqlalchemy.Column(sqlalchemy.DateTime, server_default=sqlalchemy.func.now())
+    chat_id = Column(String, primary_key=True)
+    summary = Column(Text, default="The journey begins...")
+    last_saved = Column(DateTime, server_default=func.now())
