@@ -39,15 +39,15 @@ engine = get_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # --- Models ---
-
 class Character(Base):
     __tablename__ = "characters"
-    # Added id as primary key so one user can have multiple characters in different chats
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    # Composite key: A user can have 1 character per chat
+    id = Column(Integer, primary_key=True)
     user_id = Column(String)
-    chat_id = Column(String)  # ✅ FIXED: Added missing chat_id
+    chat_id = Column(String) 
     name = Column(String)
-    stats = Column(JSON)      # {"hp": 20, "gold": 10}
+    # This stores {"hp": 20, "gold": 10, "inventory": ["Iron Sword", "Small Shield"]}
+    stats = Column(JSON, default=lambda: {"hp": 20, "gold": 10, "inventory": []})
 
 class CampaignLore(Base):
     __tablename__ = "campaign_lore"
@@ -66,6 +66,6 @@ class GameSave(Base):
     __tablename__ = "game_saves"
     id = Column(Integer, primary_key=True)
     chat_id = Column(String)
-    slot_id = Column(Integer, default=1) # 👈 Added this
+    slot_id = Column(Integer, default=1) 
     summary = Column(Text)
-    last_saved = Column(DateTime, server_default=func.now())
+    last_saved = Column(DateTime, server_default=func.now(), onupdate=func.now())

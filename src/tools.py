@@ -61,3 +61,24 @@ def load_session_state(chat_id: str) -> str:
     db = SessionLocal()
     save = db.query(GameSave).filter_by(chat_id=chat_id).first()
     return save.save_data["summary"] if save else "No previous save found."
+
+def manage_character_sheet(user_id, chat_id, item_to_add=None, gold_change=0):
+    db = SessionLocal()
+    char = db.query(Character).filter_by(user_id=user_id, chat_id=chat_id).first()
+    
+    if char:
+        # We must make a copy of the dict because SQLAlchemy 
+        # doesn't always detect "mutations" inside a JSON field
+        current_stats = dict(char.stats) 
+        
+        if item_to_add:
+            if "inventory" not in current_stats:
+                current_stats["inventory"] = []
+            current_stats["inventory"].append(item_to_add)
+            
+        current_stats["gold"] += gold_change
+        
+        char.stats = current_stats # Re-assign to trigger the update
+        db.commit()
+    db.close()
+    return f"Updated {char.name}'s sheet."

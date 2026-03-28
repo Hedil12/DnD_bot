@@ -69,16 +69,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def lobby(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     chat_id = str(update.effective_chat.id)
-    user_name = " ".join(context.args) if context.args else update.effective_user.first_name
-    
     db = SessionLocal()
+    
     char = db.query(Character).filter_by(user_id=user_id, chat_id=chat_id).first()
     if not char:
-        db.add(Character(user_id=user_id, chat_id=chat_id, name=user_name, stats={"hp": 20, "gold": 10}))
+        # Create character
+        new_char = Character(user_id=user_id, chat_id=chat_id, name=update.effective_user.first_name)
+        db.add(new_char)
         db.commit()
-        await update.message.reply_text(f"⚔️ {user_name} joined the lobby!")
-    else:
-        await update.message.reply_text(f"🛡️ {char.name}, you're already here.")
+        
+        # 📣 Tell the DM someone new is here!
+        current_slot = context.chat_data.get('active_slot', 1)
+        save = db.query(GameSave).filter_by(chat_id=chat_id, slot_id=current_slot).first()
+        
+        if save:
+            await update.message.reply_text(f"⚔️ {new_char.name} has joined the adventure mid-stride!")
+        else:
+            await update.message.reply_text(f"🛡️ {new_char.name} is ready in the lobby.")
     db.close()
 
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -141,15 +148,32 @@ async def view_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     
     char = db.query(Character).filter_by(user_id=user_id, chat_id=chat_id).first()
+    
     if char:
-        s = char.stats
-        msg = (f"📜 **Character Sheet: {char.name}**\n"
-               f"❤️ HP: {s.get('hp')}\n"
-               f"💰 Gold: {s.get('gold')}\n"
-               f"🎒 Inventory: {', '.join(s.get('inventory', ['Empty']))}")
-        await update.message.reply_text(msg, parse_mode="Markdown")
+        stats = char.stats
+        inventory = stats.get("inventory", [])
+        
+        # Format the inventory list into a string
+        items_list = "\n".join([f"- {item}" for item in inventory]) if inventory else "- Empty"
+        
+        msg = (
+            f"⚔️ **CHARACTER SHEET: {char.name}**\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"❤️ **HP:** {stats.get('hp', 20)}\n"
+            f"💰 **Gold:** {stats.get('gold', 0)}\n\n"
+            f"🎒 **INVENTORY:**\n{items_list}"
+        )
+        
+        # In Group Settings: Send to PM to avoid cluttering the group
+        try:
+            await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="Markdown")
+            if update.effective_chat.type != "private":
+                await update.message.reply_text(f"✅ @{update.effective_user.username}, I've whispered your stats to you.")
+        except Exception:
+            # Fallback if they haven't started a chat with the bot
+            await update.message.reply_text(msg, parse_mode="Markdown")
     else:
-        await update.message.reply_text("❌ No character found. Use /lobby [name] first.")
+        await update.message.reply_text("❌ Use `/lobby [name]` to create a character first!")
     db.close()
 
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
