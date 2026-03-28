@@ -1,7 +1,7 @@
 import os, vertexai, logging
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters, ContextTypes
 from vertexai.preview import reasoning_engines
 from tools import manage_character_sheet, roll_dice, archive_lore, load_session_state, save_session_state
 from database import get_engine, Base, SessionLocal, Character, GameSave
@@ -51,7 +51,7 @@ TECHNICAL RULES:
 3. Read the 'Current Campaign Summary' to ensure the story stays consistent across sessions."""
 
 dm_agent = reasoning_engines.LangchainAgent(
-    model="gemini-2.0-flash-lite",
+    model="gemini-2.5-flash-lite",
     system_instruction=dm_instruction,
     tools=[manage_character_sheet, roll_dice, archive_lore, load_session_state, save_session_state],
 )
@@ -82,36 +82,75 @@ async def lobby(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.close()
 
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Store who started the game so only they can click (Group Setting tip)
+    context.user_data['starter_id'] = update.effective_user.id
+    
+    keyboard = [
+        [InlineKeyboardButton("❄️ Slot 1: The Frozen Tundra (Horror)", callback_data='game_1_horror')],
+        [InlineKeyboardButton("🏜️ Slot 2: The Gilded Sands (Mystery)", callback_data='game_2_mystery')],
+        [InlineKeyboardButton("🌳 Slot 3: The Whispering Woods (Classic)", callback_data='game_3_classic')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("✨ **Select your Universe:**", reply_markup=reply_markup)
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    # 1. Security: Only the starter can pick (for Group Settings)
+    if query.from_user.id != context.user_data.get('starter_id'):
+        await query.answer("⚠️ Only the Party Leader can choose the slot!", show_alert=True)
+        return
+
+    # 2. Parse the data: "game_1_horror" -> slot=1, theme="horror"
+    parts = query.data.split('_')
+    slot_id = int(parts[1])
+    theme = parts[2]
+    
+    chat_id = str(query.message.chat_id)
+    context.chat_data['active_slot'] = slot_id
+    
+    db = SessionLocal()
+    save = db.query(GameSave).filter_by(chat_id=chat_id, slot_id=slot_id).first()
+    
+    if not save:
+        # 3. Different Prompts for Different Slots
+        prompts = {
+            "horror": "Start a dark, gothic horror D&D campaign. The air is cold and smells of decay.",
+            "mystery": "Start a desert-themed mystery. The party wakes up in an oasis with no memory.",
+            "classic": "Start a classic high-fantasy adventure beginning in a bustling tavern."
+        }
+        
+        # Call the DM Agent with the specific theme prompt
+        response = dm_agent.query(input=prompts[theme])
+        
+        # Save to DB
+        new_save = GameSave(chat_id=chat_id, slot_id=slot_id, summary=response["output"])
+        db.add(new_save)
+        db.commit()
+        
+        await query.edit_message_text(f"🎬 **NEW STORY STARTED**\n\n{response['output']}")
+    else:
+        await query.edit_message_text(f"💾 **LOADING SLOT {slot_id}...**\n\n{save.summary}")
+    
+    db.close()
+
+async def view_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
     chat_id = str(update.effective_chat.id)
     db = SessionLocal()
     
-    try:
-        players = db.query(Character).filter_by(chat_id=chat_id).all()
-        if not players:
-            await update.message.reply_text("⚠️ The lobby is empty! Everyone should type /lobby first.")
-            return
-
-        # 🎭 The "DM Hook" Prompt
-        player_names = ", ".join([p.name for p in players])
-        opening_query = (
-            f"The adventure begins with these heroes: {player_names}. "
-            "Write a 2-paragraph cinematic opening scene. Describe the environment's "
-            "sights, sounds, and smells. End by asking the party what they do first."
-        )
-        
-        # ✅ Using .query() now that langchain is installed
-        response = dm_agent.query(input=opening_query)
-        
-        # Save this to the database so handle_messages knows the context
-        update_summary(chat_id, response["output"])
-        
-        await update.message.reply_text(f"🎭 **THE CHRONICLES BEGIN** 🎭\n\n{response['output']}")
-        
-    except Exception as e:
-        logger.error(f"🎬 Start Game Error: {e}")
-        await update.message.reply_text("⚠️ The mists of time are too thick to peer through (AI Error). Try /start_game again.")
-    finally:
-        db.close()
+    char = db.query(Character).filter_by(user_id=user_id, chat_id=chat_id).first()
+    if char:
+        s = char.stats
+        msg = (f"📜 **Character Sheet: {char.name}**\n"
+               f"❤️ HP: {s.get('hp')}\n"
+               f"💰 Gold: {s.get('gold')}\n"
+               f"🎒 Inventory: {', '.join(s.get('inventory', ['Empty']))}")
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    else:
+        await update.message.reply_text("❌ No character found. Use /lobby [name] first.")
+    db.close()
 
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -155,12 +194,40 @@ async def delete_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.close()
     await update.message.reply_text("💥 Reset complete.")
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = (
+        "✨ **D&D Adventure Guide** ✨\n\n"
+        "**Setup Commands:**\n"
+        "👤 `/lobby [Name]` - Create your character for this chat.\n"
+        "🎬 `/start_game` - Begin the story (Narrative start).\n"
+        "🔄 `/reset` - Wipe current progress and start over.\n\n"
+        "**Gameplay Commands:**\n"
+        "📜 `/stats` - View your HP, Gold, and Items.\n"
+        "🎲 `/roll 1d20` - Manually roll dice (or just tell the DM your action).\n"
+        "💾 `/save` - Explicitly trigger a 'Hard State' save.\n\n"
+        "**Tip:** You don't always need commands! Just talk to the DM like: *'I search the barrel for potions.'*"
+    )
+    await update.message.reply_text(help_text, parse_mode="Markdown")
+
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TELE_TOKEN).build()
+
+    # 1. Register the Commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("lobby", lobby))
+    app.add_handler(CommandHandler("stats", view_stats))
+    app.add_handler(CommandHandler("help", help_command))
+    
+    # This command now ONLY sends the buttons, it doesn't start the story yet
     app.add_handler(CommandHandler("start_game", start_game))
-    app.add_handler(CommandHandler("delete_save", delete_save))
+
+    # 2. Register the Button Listener (CRITICAL)
+    # This handles the clicks from the start_game buttons
+    app.add_handler(CallbackQueryHandler(button_handler))
+
+    # 3. Register the Message Handler (The DM Logic)
+    # Filters.TEXT & ~Filters.COMMAND means "any text that isn't a /command"
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_messages))
-    logger.info("🤖 Bot live and redacted.")
+
+    logger.info("🤖 Bot is live. Waiting for players...")
     app.run_polling()

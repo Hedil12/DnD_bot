@@ -1,18 +1,12 @@
-# Satisfies both Google and Telegram Bot requirements
-httpx>=0.28.1
-python-telegram-bot>=22.0
-
-# Google Cloud SDKs
 google-cloud-aiplatform>=1.44.0
-google-cloud-storage>=3.0.0
-cloud-sql-python-connector[pg8000]>=1.6.0
-
-# Database & Logic
-SQLAlchemy>=2.0.0
-pgvector>=0.2.4
-python-dotenv>=1.0.0
-
-# Langchain and related dependencies
-langchain
-langchain-core
+google-cloud-storage>=2.10.0,<3.0.0
+langchain==0.1.20
+langchain-community==0.0.38
+langchain-core==0.1.52
 langchain-google-vertexai
+python-dotenv
+sqlalchemy
+psycopg2-binary
+pg8000
+cloud-sql-python-connector[pg8000]
+python-telegram-bot

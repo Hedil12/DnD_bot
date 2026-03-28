@@ -64,6 +64,8 @@ class Party(Base):
 
 class GameSave(Base):
     __tablename__ = "game_saves"
-    chat_id = Column(String, primary_key=True)
-    summary = Column(Text, default="The journey begins...")
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(String)
+    slot_id = Column(Integer, default=1) # 👈 Added this
+    summary = Column(Text)
     last_saved = Column(DateTime, server_default=func.now())
