@@ -1,51 +1,52 @@
 # ⚔️ Agentic D&D Bot: Vertex AI & Google Cloud Integration
 
-A professional-grade **AI Dungeon Master** built on Google Cloud Platform (GCP). This bot utilizes **Vertex AI (Gemini)** for agentic reasoning and **Cloud SQL (PostgreSQL)** for persistent game state management, providing a seamless TTRPG experience directly within Telegram.
+A professional-grade **AI Dungeon Master** built on Google Cloud Platform (GCP). This bot utilizes **Vertex AI (Gemini 2.0 Flash Lite)** for agentic reasoning and **Cloud SQL (PostgreSQL)** for persistent game state management, providing a highly responsive TTRPG experience directly within Telegram.
 
 ---
 
 ## ☁️ Cloud Architecture & Tech Stack
 
-*   **AI Engine:** `Vertex AI` (Gemini 2.0 Flash lite) — Leverages advanced function calling for agentic tool use.
-*   **Database:** `Google Cloud SQL` (PostgreSQL) — Centralized storage for characters, campaign states, and chat logs.
-*   **Orchestration:** `Vertex AI SDK` .
+*   **AI Engine:** `Vertex AI` (Gemini 2.0 Flash Lite) — Optimized for low-latency agentic tool use and high-efficiency function calling.
+*   **Database:** `Google Cloud SQL` (PostgreSQL) — Centralized storage for characters, campaign states, and structured logs.
+*   **Orchestration:** `Vertex AI SDK`.
 *   **Interface:** `python-telegram-bot` (Asynchronous).
-*   **Infrastructure:** Designed for deployment on `Google Cloud Run` or `Compute Engine`.
+*   **Infrastructure:** Designed for scalable deployment on `Google Cloud Run`.
 
 ---
 
 ## 🤖 Agentic Tooling & Logic
 
-The bot operates as an **Autonomous Agent**. When a player acts, the Gemini model determines if it needs to call a specific Python tool:
+The bot operates as an **Autonomous Agent**. When a player acts, the Gemini model determines which local Python tools to trigger to maintain game integrity:
 
-*   **🎲 Dice Engine:** Calculates rolls ($d20, d12, etc.$) based on situational difficulty.
-*   **📖 Context Manager:** Periodically summarizes long-form adventures to stay within token limits.
-*   **💾 Postgres CRUD:** A robust backend to Create, Read, Update, and Delete character data and campaign progress.
+*   **🎲 Dice Engine:** Executes cryptographic-safe rolls ($d20, d12, etc.$) based on story difficulty.
+*   **📖 Context Manager:** Periodically summarizes long-form adventures to stay within token limits and maintain "world memory."
+*   **💾 Postgres CRUD:** A robust backend to Create, Read, Update, and Delete character data and campaign progress in real-time.
 
 ---
 
-## 🎮 Game Flow & Session Handling
+## 🎮 Game Flow & Multi-Slot Persistence
 
-The bot intelligently distinguishes between **Private** (1-on-1) and **Public** (Group) chats to manage game sessions effectively.
+The bot intelligently manages session states, distinguishing between **Private** (Solo) and **Public** (Group) chats to ensure data isolation.
 
 ### **Core Commands**
-*   **`/start`**: Initializes the connection. The bot detects the `ChatType` (Private vs. Group) and sets up the environment accordingly.
-*   **`/join`**: Registers the user into the active database session. If in a group chat, it links the user to that specific Group ID.
+*   **`/start`**: Initializes the bot and detects `ChatType`. In group settings, it initializes the lobby.
+*   **`/join`**: Registers a user into the active session. **Supports mid-game joining**, where the AI narratively introduces the new player to the current scene.
+*   **`/stats`**: Fetches a live view of character attributes, inventory, and status directly from PostgreSQL.
+*   **`/help`**: A context-aware guide that displays available commands based on the current game state.
 
-### **Message Handling & Persistence**
-Every interaction is processed through a multi-layered pipeline:
-1.  **Ingestion:** Incoming messages are captured and identified by User ID and Chat ID.
-2.  **Logging:** System-level logs track API latency, tool-calling success, and errors for debugging.
-3.  **Database Sync:** Game events (e.g., "Found a rusty sword") are saved to PostgreSQL immediately to ensure no data loss if the bot restarts.
-4.  **AI Response:** Gemini generates the narrative based on the retrieved DB context.
+### **3-Slot Save System**
+To support multiple adventures, the bot provides **3 dedicated save slots** per Chat ID.
+*   Users can switch between different campaigns without data loss.
+*   Preloading logic allows the "Dungeon Master" to resume specific story arcs across different sessions.
 
 ---
 
 ## ⚡ Performance & Optimization
 
-*   **Token Efficiency:** Implemented a "Sliding Window" context approach. By storing previous interactions in PostgreSQL, we only feed the most relevant "summaries" back to Vertex AI, significantly reducing costs.
-*   **Connection Pooling:** Optimized database hits using SQLAlchemy to handle multiple concurrent users without exhausting Cloud SQL resources.
-*   **Structured Logging:** Comprehensive logs are maintained to monitor the "Chain of Thought" of the AI agent, ensuring the DM logic remains consistent.
+*   **Token Efficiency:** Implemented a "Sliding Window" context approach. By storing interactions in PostgreSQL, we only feed the most relevant summaries back to Gemini, significantly reducing latency and costs.
+*   **Connection Pooling:** Optimized database hits using **SQLAlchemy** to handle concurrent players across multiple groups without exhausting Cloud SQL resources.
+*   **Hybrid Session Logic:** Differentiates between "Lobby" and "Active" states, ensuring the AI only begins storytelling once the party is ready.
+*   **Structured Logging:** Comprehensive system logs track API latency and "Chain of Thought" reasoning to debug the DM's decision-making process.
 
 ---
 
@@ -56,3 +57,5 @@ To run this project, ensure the following environment variables are set:
 *   `PROJECT_ID`: Your Google Cloud Project ID.
 *   `DB_HOST`: Your Cloud SQL Public/Private IP.
 *   `TELEGRAM_TOKEN`: Your bot token from BotFather.
+
+---
