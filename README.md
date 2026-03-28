@@ -6,7 +6,7 @@ A professional-grade **AI Dungeon Master** built on Google Cloud Platform (GCP).
 
 ## ☁️ Cloud Architecture & Tech Stack
 
-* **AI Engine:** `Vertex AI` (Gemini 2.0 Flash Lite) — Optimized for low-latency agentic tool use and high-efficiency function calling.
+* **AI Engine:** `Vertex AI` (Gemini 2.5 Flash Lite) — Optimized for low-latency agentic tool use and high-efficiency function calling.
 * **Database:** `Google Cloud SQL` (PostgreSQL) — Centralized storage for characters, campaign states, and structured logs.
 * **Orchestration:** `Vertex AI SDK`.
 * **Interface:** `python-telegram-bot` (Asynchronous).
@@ -46,3 +46,34 @@ Create a `.env` file in the root directory. **Ensure this file is added to your 
 TELEGRAM_TOKEN=your_bot_father_token
 PROJECT_ID=your_gcp_project_id
 DB_HOST=your_cloud_sql_ip
+```
+
+### **2. GCP Authentication & Keys**
+Download your GCP Service Account Key (JSON) from the Google Cloud Console.
+
+Place it in the root folder and rename it (e.g., gcp-key.json) for simplicity.
+
+IMPORTANT: Ensure gcp-key.json is added to your .gitignore.
+
+### **3. Running the Application**
+First, authenticate your Google account via Bash:
+
+gcloud auth application-default login --no-launch-browser
+Then, run the main script:
+
+```Bash
+python main.py
+```
+If you cannot run the gcloud auth in your environment, manually export the key path:
+
+```Bash
+export GOOGLE_APPLICATION_CREDENTIALS="./gcp-key.json"
+python main.py
+```
+### **4. Database Maintenance**
+If the database contains existing data and you wish to perform a clean wipe/reset of the schema:
+
+
+```Bash
+python reset_db.py
+```

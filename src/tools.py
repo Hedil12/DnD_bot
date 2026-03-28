@@ -2,28 +2,61 @@ import random
 from typing import Annotated
 from database import SessionLocal, Character, CampaignLore, GameSave, Party
 
+import random
+from typing import Annotated, Optional
+from database import SessionLocal, Character, CampaignLore, GameSave
+
 def manage_character_sheet(
     user_id: str, 
-    action: Annotated[str, "'read' or 'update'"], 
-    stat: str = None, 
-    value: int = None
+    chat_id: str,
+    action: Annotated[str, "'read', 'update_stat', or 'add_item'"], 
+    stat_name: Optional[str] = None, 
+    stat_value: Optional[int] = None,
+    item_to_add: Optional[str] = None,
+    gold_change: int = 0
 ) -> str:
-    """Read or modify player HP, Gold, or Level in the database."""
+    """The primary tool for the DM to interact with player sheets (HP, Gold, Inventory)."""
     db = SessionLocal()
     try:
-        char = db.query(Character).filter(Character.user_id == user_id).first()
-        if not char: return "Character not found. Use /join first."
+        # We query by both user and chat to ensure we have the right character for this game
+        char = db.query(Character).filter_by(user_id=user_id, chat_id=chat_id).first()
+        if not char: 
+            return "Character not found. Player must use /lobby first."
 
+        # Make a deep copy to ensure SQLAlchemy detects changes in the JSON field
+        current_stats = dict(char.stats)
+
+        # OPTION 1: Just looking at the sheet
         if action == "read":
-            return f"{char.name}'s Status: {char.stats}"
+            return f"Current stats for {char.name}: {current_stats}"
         
-        if action == "update" and stat in char.stats:
-            char.stats[stat] = value
+        # OPTION 2: Modifying a numeric stat (HP, Level, etc.)
+        if action == "update_stat" and stat_name:
+            current_stats[stat_name] = stat_value
+            char.stats = current_stats
             db.commit()
-            return f"Success: {char.name}'s {stat} is now {value}."
+            return f"Success: {char.name}'s {stat_name} is now {stat_value}."
+
+        # OPTION 3: Adding an item or changing gold
+        if action == "add_item":
+            if item_to_add:
+                if "inventory" not in current_stats:
+                    current_stats["inventory"] = []
+                current_stats["inventory"].append(item_to_add)
+            
+            if gold_change != 0:
+                current_stats["gold"] = current_stats.get("gold", 0) + gold_change
+            
+            char.stats = current_stats
+            db.commit()
+            return f"Updated {char.name}: Added {item_to_add or 'nothing'} and changed gold by {gold_change}."
+
+    except Exception as e:
+        return f"Error updating character sheet: {str(e)}"
     finally:
         db.close()
-    return "Invalid action."
+    
+    return "Invalid action requested."
 
 def roll_dice(dice: Annotated[str, "e.g., 'd20' or '2d6'"]) -> str:
     """Standard DnD dice rolling tool."""
@@ -61,24 +94,3 @@ def load_session_state(chat_id: str) -> str:
     db = SessionLocal()
     save = db.query(GameSave).filter_by(chat_id=chat_id).first()
     return save.save_data["summary"] if save else "No previous save found."
-
-def manage_character_sheet(user_id, chat_id, item_to_add=None, gold_change=0):
-    db = SessionLocal()
-    char = db.query(Character).filter_by(user_id=user_id, chat_id=chat_id).first()
-    
-    if char:
-        # We must make a copy of the dict because SQLAlchemy 
-        # doesn't always detect "mutations" inside a JSON field
-        current_stats = dict(char.stats) 
-        
-        if item_to_add:
-            if "inventory" not in current_stats:
-                current_stats["inventory"] = []
-            current_stats["inventory"].append(item_to_add)
-            
-        current_stats["gold"] += gold_change
-        
-        char.stats = current_stats # Re-assign to trigger the update
-        db.commit()
-    db.close()
-    return f"Updated {char.name}'s sheet."
