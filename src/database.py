@@ -52,9 +52,11 @@ class Character(Base):
 class CampaignLore(Base):
     __tablename__ = "campaign_lore"
     id = Column(Integer, primary_key=True)
-    chat_id = Column(String) # Good to track which chat this lore belongs to
+    chat_id = Column(String)
+    slot_id = Column(Integer)  # 1, 2, or 3
     content = Column(Text)
-
+    created_at = Column(DateTime, server_default=func.now())
+    
 class Party(Base):
     __tablename__ = "parties"
     chat_id = Column(String, primary_key=True)

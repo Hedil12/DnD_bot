@@ -4,7 +4,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters, ContextTypes
 from vertexai.preview import reasoning_engines
 from tools import manage_character_sheet, roll_dice, archive_lore, load_session_state, save_session_state
-from database import get_engine, Base, SessionLocal, Character, GameSave
+from database import CampaignLore, get_engine, Base, SessionLocal, Character, GameSave
 from memory import get_summary, update_summary
 
 # 1. 🛡️ SECURITY: LOGGING & TOKEN REDACTION
@@ -45,10 +45,12 @@ NARRATION RULES:
 3. PACING: After describing a scene, always end with a clear prompt: "What do you do?" or "How do you proceed?"
 4. CHARACTER KNOWLEDGE: Refer to players by their names and mention their specific gear or stats.
 
-TECHNICAL RULES:
-1. Use 'manage_character_sheet' for any HP or Gold changes.
-2. Use 'roll_dice' for any checks (Stealth, Perception, Combat).
-3. Read the 'Current Campaign Summary' to ensure the story stays consistent across sessions."""
+TECHNICAL RULES (STRICT COMPLIANCE):
+1. USE 'roll_dice' for ANY action with a chance of failure. You MUST interpret the roll result into the narrative (e.g., a low roll means a clumsy attempt).
+2. USE 'manage_character_sheet' with 'add_item' whenever a player finds loot or gold.
+3. USE 'manage_character_sheet' with 'update_stat' for HP changes or Level-ups.
+4. USE 'archive_lore' ONLY for major milestones (killing a boss, moving to a new city, a player death).
+5. CONTINUITY: Always check the 'Current Campaign Summary' and 'Lore Archives' provided in your context before describing the current state of the world."""
 
 dm_agent = reasoning_engines.LangchainAgent(
     model="gemini-2.5-flash-lite",
@@ -180,9 +182,9 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     chat_id = str(update.effective_chat.id)
     user_text = update.message.text
-
-    # Log the action without the raw message if you want maximum privacy
-    logger.info(f"📥 MSG from {user_id} in {chat_id}")
+    
+    # Get the active slot from context (defaults to 1 if not set)
+    current_slot = context.chat_data.get('active_slot', 1)
 
     db = SessionLocal()
     try:
@@ -191,24 +193,41 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ You aren't in this adventure! Use /lobby [Name].")
             return
 
-        campaign_summary = get_summary(chat_id) or "A new group of adventurers stands at the threshold of destiny."
+        # 1. Fetch World Summary (The "Current Room/State")
+        campaign_summary = get_summary(chat_id, current_slot) or "A fresh journey begins."
+
+        # 2. Fetch Recent Lore (The "History/Memory")
+        # We grab the 5 most recent major events to keep the AI focused
+        recent_lore = db.query(CampaignLore).filter_by(
+            chat_id=chat_id, 
+            slot_id=current_slot
+        ).order_by(CampaignLore.created_at.desc()).limit(5).all()
         
-        # 🤖 The Core AI Call
-        # We pass the summary and the character's current status so the AI knows who is talking
-        input_str = f"Summary: {campaign_summary}\nPlayer: {character.name} (Stats: {character.stats})\nAction: {user_text}"
+        # Format the lore into a readable string
+        lore_context = " | ".join([f"EVENT: {l.content}" for l in reversed(recent_lore)]) if recent_lore else "No major history yet."
+
+        # 🤖 3. The Enhanced AI Call
+        # We now provide: Current State + History + Player Stats + Action
+        input_str = (
+            f"--- WORLD CONTEXT ---\n"
+            f"CURRENT SCENE: {campaign_summary}\n"
+            f"RECENT HISTORY: {lore_context}\n\n"
+            f"--- PLAYER STATUS ---\n"
+            f"ACTIVE PLAYER: {character.name}\n"
+            f"STATS/INVENTORY: {character.stats}\n\n"
+            f"PLAYER ACTION: {user_text}"
+        )
         
         response = dm_agent.query(input=input_str)
         
-        # Send the "Dungeon Master" response back to Telegram
         await update.message.reply_text(response["output"])
         
     except Exception as e:
-        # This will catch that .run vs .query error specifically
         logger.error(f"💥 Gameplay Error: {type(e).__name__} - {e}")
-        await update.message.reply_text("⚠️ The DM is consulting the rulebooks (AI Error). Please try your action again.")
+        await update.message.reply_text("⚠️ The DM is consulting the rulebooks. Please try again.")
     finally:
         db.close()
-
+        
 async def delete_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     db = SessionLocal()

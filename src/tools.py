@@ -66,14 +66,24 @@ def roll_dice(dice: Annotated[str, "e.g., 'd20' or '2d6'"]) -> str:
     results = [random.randint(1, sides) for _ in range(count)]
     return f"🎲 Rolled {dice}: {sum(results)} {results}"
 
-def archive_lore(event_summary: Annotated[str, "A short summary of what just happened"]) -> str:
-    """Saves important plot points to the permanent Postgres memory."""
+def archive_lore(
+    chat_id: str, 
+    slot_id: int, 
+    event_summary: Annotated[str, "A short, 1-sentence summary of a major plot point (e.g. 'The king was assassinated')"]
+) -> str:
+    """Saves critical plot points so the DM remembers them in future sessions."""
     db = SessionLocal()
     try:
-        new_lore = CampaignLore(content=event_summary)
+        new_lore = CampaignLore(
+            chat_id=chat_id, 
+            slot_id=slot_id, 
+            content=event_summary
+        )
         db.add(new_lore)
         db.commit()
-        return "The archives have been updated with this event."
+        return f"Lore archived for Slot {slot_id}: {event_summary}"
+    except Exception as e:
+        return f"Failed to archive lore: {str(e)}"
     finally:
         db.close()
 
