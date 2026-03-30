@@ -16,11 +16,14 @@ A professional-grade **AI Dungeon Master** built on Google Cloud Platform (GCP).
 
 ## 🤖 Agentic Tooling & Logic
 
-The bot operates as an **Autonomous Agent**. When a player acts, the Gemini model determines which local Python tools to trigger:
+The bot operates as an **Autonomous Agent**. When a player acts, the Gemini model determines which local Python tools to trigger to maintain game integrity and persistence:
 
 * **🎲 Dice Engine:** Executes cryptographic-safe rolls ($d20, d12, etc.$) based on story difficulty.
-* **📖 Context Manager:** Periodically summarizes long-form adventures to maintain "world memory."
-* **💾 Postgres CRUD:** A robust backend to Create, Read, Update, and Delete character data and campaign progress in real-time.
+* **📖 Context Manager:** Periodically summarizes long-form adventures to stay within token limits.
+* **👤 manage_character_sheet:** Handles the **CRUD** logic for player stats, inventory, and health directly in PostgreSQL.
+* **📜 archive_lore:** Dedicated tool for the AI to "write" important world events or NPC introductions into the permanent lore table.
+* **💾 save_session_state:** Captures the current snapshot of the game world, including room descriptions and active encounters.
+* **📂 load_session_state:** Retrieves previous game states from the 3-slot save system to resume a campaign seamlessly.
 
 ---
 
