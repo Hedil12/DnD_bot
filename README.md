@@ -1,6 +1,6 @@
 # ⚔️ Agentic D&D Bot: Vertex AI & Google Cloud Integration
 
-A professional-grade **AI Dungeon Master** built on Google Cloud Platform (GCP). This bot utilizes **Vertex AI (Gemini 2.0 Flash Lite)** for agentic reasoning and **Cloud SQL (PostgreSQL)** for persistent game state management, providing a highly responsive TTRPG experience directly within Telegram.
+A professional-grade **AI Dungeon Master** built on Google Cloud Platform (GCP). This bot utilizes **Vertex AI (Gemini 2.5 Flash Lite)** for agentic reasoning and **Cloud SQL (PostgreSQL)** for persistent game state management, providing a highly responsive TTRPG experience directly within Telegram.
 
 ---
 
